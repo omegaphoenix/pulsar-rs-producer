@@ -1,8 +1,9 @@
 mod config;
+use pulsar::authentication::oauth2::{OAuth2Authentication, OAuth2Params};
 use pulsar::producer::ProducerOptions;
 use pulsar::proto::CompressionType;
 use pulsar::{Authentication, Pulsar, TokioExecutor};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -18,7 +19,7 @@ pub struct Config {
     pub pulsar: PulsarConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PulsarConfig {
     pub hostname: String,
     pub port: u16,
@@ -26,8 +27,18 @@ pub struct PulsarConfig {
     pub namespace: String,
     pub topic: String,
     pub token: Option<String>,
+    pub oauth: Option<OAuth>,
     /// File to read messages from to send
     pub filename: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OAuth {
+    pub client_id: String,
+    pub client_secret: String,
+    pub client_email: String,
+    pub issuer_url: String,
+    pub audience: String,
 }
 
 async fn get_pulsar_client(config: Config) -> Result<Pulsar<TokioExecutor>, pulsar::Error> {
@@ -37,11 +48,25 @@ async fn get_pulsar_client(config: Config) -> Result<Pulsar<TokioExecutor>, puls
     );
     let mut builder = Pulsar::builder(addr, TokioExecutor);
 
-    let authentication = Authentication {
-        name: "token".to_string(),
-        data: config.pulsar.token.unwrap().into_bytes(),
-    };
-    builder = builder.with_auth(authentication);
+    if let Some(token) = config.pulsar.token {
+        let authentication = Authentication {
+            name: "token".to_string(),
+            data: token.into_bytes(),
+        };
+        builder = builder.with_auth(authentication);
+    }
+
+    if let Some(oauth) = config.pulsar.oauth {
+        let credentials = serde_json::to_string(&oauth).unwrap();
+
+        builder =
+            builder.with_auth_provider(OAuth2Authentication::client_credentials(OAuth2Params {
+                issuer_url: oauth.issuer_url.clone(),
+                credentials_url: format!("data:application/json;,{}", credentials),
+                audience: Some(oauth.audience),
+                scope: None,
+            }));
+    }
 
     builder.build().await
 }
