@@ -4,5 +4,14 @@ port = 6651
 tenant = "public"
 namespace = ""
 topic = ""
-token = ""
 filename = ""
+### Optional if using token authentication ###
+token = ""
+### Otherwise use oauth instead ##############
+[pulsar.oauth]
+client_id = ""
+client_secret = ""
+client_email = ""
+issuer_url = ""
+audience = ""
+##############################################
